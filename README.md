@@ -12,7 +12,7 @@ cf. [paper](link)
 
 # Usage:
 
-#### Runing with RAM
+### Runing with RAM
 create a RAM disk in shell
 ```
 diskutil erasevolume HFS+ RAMDisk $(hdiutil attach -nomount ram://1048576)
@@ -24,8 +24,8 @@ Remember to unmount it after you finish the fitting work
 diskutil unmount /Volumes/RAMDisk
 ```
 
-#### Configure radex and path
-modify parameter for radex running  in `configure.py`
+### Configure radex and path
+modify parameter for radex running  in `MMMRadex.py`
 ```
 # path of radex bin file
 radexBin = '/Users/Radex/src/radex'
@@ -46,7 +46,7 @@ outPath = './out'
 figPath = './fig'
 ```
 
-#### Catalog
+### Catalog
 flux of sources are stored in a catalog, each flux is followed by an error column:
 ```
 SOURCE   z       D_L     T_dust  FWHM   CO(1-0)  err      CO(2-1)  err     CO(3-2)  err    CO(4-3)  err     CO(5-4)  err     CO(6-5)  err     CO(7-6)  err     CO(8-7)  err     CI(1-0)  err     CI(2-1)  err
@@ -59,8 +59,8 @@ SOURCE   z       D_L     T_dust  FWHM   CO(1-0)  err      CO(2-1)  err     CO(3-
 - a valid error should be provided after the upper/lower flux limit to calculate likelihood.
 - if the following error is NaN, the flux is not an observed result, but a constraint to the model (more like a physical limit). This kind of flux will NOT show in the SLED plot.
 
-#### Custom fitting
-modify parameter  in `configure.py` to custom your fitting process
+### Custom fitting
+modify parameter  in `MMMRadex.py` to custom your fitting process
 ```
 # number of components
 nComponent = 2 # cold and warm
@@ -88,20 +88,21 @@ NOTE: the Initial value of Omega is derived by assuming a physical size of sourc
 
 An example of `paramsConfig`:
 ```
-paramsConfig = {} 
-# volume density, MUST be 'free'
-paramsConfig['nH2']  = [[4.781, 3.337],	'free',	(1.5, 6.0), r'$lg n_{H_2}$']
-# kinematic temperature, MUST be 'free'
-paramsConfig['Tkin'] = [[0.879, 2.222],	'free',	(np.log10(Tbg), 2.8), r'$lg T_{Kin}$']
-# CO abundance
-paramsConfig['Xco']  = [-4.10, 'fix', np.log10(XB['co']), r'$lg X_{CO}$']
-# CI abundance
-paramsConfig['Xci']  = [-4.52, 'share', np.log10(XB['ci']),	r'$lg X_{CI}$']
-# solid angle
-paramsConfig['Omega']= [None, 'free', (-5, 5), r'$lg \Omega$']
+paramsConfig = dict(
+	# density, MUST be 'free'
+	nH2  = [[4.781, 3.337],	'free',	(1.5, 6.0),	r'$lg n_{H_2}$'],
+	# Tkin, MUST be 'free'	
+	Tkin = [[0.879, 2.222],	'free',	(lg(Tbg), 2.8),	r'$lg T_{Kin}$'],
+	# CO abundance
+	Xco  = [-4.10,	'fix',	lg(XB['co']),	r'$lg X_{CO}$'],
+	# CI abundance
+	Xci  = [-4.52,	'share',lg(XB['ci']),	r'$lg X_{CI}$'],
+	# solid angle, if share, shrink by two magnitude for each component
+	Omega= [None,	'free',	(-5, 5), 		r'$lg \Omega$']
+	)
 ```
 
-#### Start a fitting session
+### Start a fitting session
 calculate one source like this:
 ```
 # specify a catalog
@@ -122,7 +123,7 @@ for source,_ in cat.iterrows():
 	runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=200, niter=800, phySize=3)
 ```
 
-#### Output figures
+### Output figures
 Three types of figures will be output to `figPath`:
 - probability of steps to check convergence
 ```
