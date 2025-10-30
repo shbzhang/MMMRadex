@@ -613,7 +613,7 @@ def plotCorner(source, nComponent=2, bins=20, params=None, labels=None, showtop=
 
 	### filter
 	fig, ax = corners(steps, lnprobs, bins=bins, values=params, labels=labels, showtop=showtop, \
-		output=getOutPickleFilename(source, nComponent=nComponent, suffix=suffix)+'.out')
+		output=getOutPickleFilename(source, nComponent=nComponent, suffix=suffix)+'.out', **kws)
 
 	fig.savefig(os.path.join(figPath, '%s_corner%s.png' % (source, suffix)), format='png', bbox_inches='tight', dpi=400)
 	return fig, ax
@@ -1052,13 +1052,13 @@ if __name__ == '__main__':
 	)
 
 
-	runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=50, niter=100, phySize=3)
-	plotProb(source, nComponent = nComponent, suffix=suffix)
+	#runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=50, niter=100, phySize=3)
+	#plotProb(source, nComponent = nComponent, suffix=suffix)
 	plotCorner(source, nComponent = nComponent, suffix=suffix, showtop=0.5)
-	# draw sled of a model
-	plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=10)
-	# draw several model together
-	plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=0, separateComponents=True, otherModel={'1-component model':'out/%s_1comp_model_flux.dat' % source})
+	# itself
+	#plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=10)
+	# together
+	#plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=0, separateComponents=True, otherModel={'1-component model':'out/%s_1comp_model_flux.dat' % source})
 	plt.show()
 
 
