@@ -22,6 +22,7 @@ import astropy.constants as con
 from scipy.optimize import curve_fit, minimize
 from scipy.interpolate import interp1d
 from scipy.stats import norm
+from scipy.ndimage import gaussian_filter
 
 # to match the cosmo in the CO paper
 from astropy.cosmology import Planck18 as cosmo
@@ -29,7 +30,29 @@ from astropy.cosmology import Planck18 as cosmo
 #cosmo = FlatLambdaCDM(H0=67.8 * u.km / u.s / u.Mpc, Om0=0.308)
 
 import matplotlib.pyplot as plt
-from config import *
+
+
+# path of radex bin file
+radexBin = '/Users/shaobo/AstroTools/Radex/src/radex'
+# frequency range for Radex to calculate lines
+radexFreqRange = (1, 1800) # GHz
+
+
+# path to ram disk
+tmpPath = '/Volumes/RAMDisk'
+# path where you put molecule data
+molPath = './radex_moldata'
+# path put fitting results
+outPath = './out'
+# path put figures
+figPath = './fig'
+# path of radex bin file
+
+
+# constant & assumption
+Tbg = 2.7315 #CMB
+opr = 3 #Assuming ortho to para ratio equals 3
+fortho = opr/(1+opr) #fraction of ortho
 
 ncpu = multiprocessing.cpu_count() //3*2
 
@@ -169,20 +192,16 @@ def modelMM(p, lines, nComponent=2, dvddr=1, **kws):
 				intFlux += [j_f.get(j, np.nan) * 10**logO for j in J]
 				j_t = dict(zip(JModel, tauModel))
 				tau += [j_t.get(j, np.nan) for j in J]
-
-				#if species == 'co':
-				#	followingFlux += intFluxPerSr[lastCO:]
 			else:
 				intFlux += [np.nan]*len(J)
 				tau += [np.nan]*len(J)
-				#followingFlux = [np.nan]*len(J[lastCO:])
 	nObs = sum(len(js) for js in lines.values())
 	intFlux = np.array(intFlux).reshape(nComponent, nObs)
 	tau = np.array(tau).reshape(nComponent, nObs)
+	intFlux /= 1+z
 
 	#followingFlux = np.array(followingFlux).reshape(nComponent, len(followingFlux)//nComponent)
 	return intFlux, tau#, followingFlux
-
 
 
 def residual(fp, flux, eflux, nComponent=2, **kws):
@@ -328,7 +347,7 @@ def loadCatalog(filename):
 
 
 def decodeMolecule(text):
-	match = re.match(r'^([A-Za-z0-9]+)\(.*(\d+)-(\d+)\)$', text)
+	match = re.match(r'^([A-Za-z0-9]+)\(\s*(\d+)-\s*(\d+)\)$', text)
 	if match:
 		species = match.group(1).lower()
 		species = species.replace('+', 'p') # for hco+
@@ -340,6 +359,7 @@ def decodeMolecule(text):
 
 def encodeMolecule(species, Jup, Jlo):
 	return '%s(%i-%i)' % (species.upper(), Jup, Jlo)
+
 
 def copyMoleculeDat(lines):
 	### copy molecule dat to ram
@@ -429,7 +449,6 @@ def loadPklFile(source, nComponent, suffix=''):
 		return pickle.load(pklFile)
 
 
-
 def plotProb(source, nComponent=2, suffix=''):
 	### plot the posterior probability to check convergence
 	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux, limit), (steps, lnprobs) = loadPklFile(source, nComponent, suffix=suffix)
@@ -441,19 +460,33 @@ def plotProb(source, nComponent=2, suffix=''):
 	return fig, ax
 
 
-
-def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, suffix='', subset=None, **kws):
+def plotCorner(source, nComponent=2, bins=20, params=None, labels=None, showtop=0.5, suffix='', subset=None, **kws):
 	### plot corners
-	global paramsConfig, lines, dV, z, lastCO
-	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux, limit), (steps, lnprobs) = loadPklFile(source, nComponent, suffix=suffix)
-	#with open(getOutPickleFilename(source, nComponent, suffix=suffix), 'rb') as pklFile:
-	#	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux), (steps, lnprobs) = pickle.load(pklFile)
-	lastCO = lines['co'][-1][0]
+	global paramsConfig, lines, dV, z
 
-	def corners(steps, probs, bins=10, labels=None, point=None, top=0, pointColor='#e33a23'):
+	def corners(steps, probs, bins=10, showtop=0,
+		figure_kws = dict(figsize=(9,9)),
+		hist_kws = dict(density=True, color = 'grey', histtype='step'),
+		values = None,
+		hist_value_kws = dict(pos='top', marker='v', color='tab:red'),
+		hist2d_value_kws = dict(marker='+', color='tab:red', markersize=8, markeredgewidth=2),
+		limits = [0.16, 0.84],
+		hist_limit_kws = dict(linestyle='--', color='k', linewidth=1, alpha=0.5),
+		labels = None,
+		hist_label_kws = dict(fontsize=10),
+		hist2d = True,
+		hist2d_kws = dict(cmap='Blues'), 
+		scatter = False,
+		scatter_kws = dict(s=0.2, cmap='RdYlBu', alpha=0.3),
+		contour = True,
+		contour_smooth_sigma = 0,
+		contour_kws = dict(colors='gray', levels=[0.2, 0.4, 0.6, 0.8], linewidths=1.5, alpha=0.8),
+		output = 'test.out',
+		):
+
 		ndim = steps.shape[1]
 		### plot corners
-		def lim(s):
+		def autoLimit(s):
 			### extend according to s range
 			ma, mi = np.nanmax(s), np.nanmin(s)
 			return mi-(ma-mi)*0.1, ma+(ma-mi)*0.1
@@ -466,32 +499,44 @@ def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, 
 
 		### sort steps (or high prob steps might be put behind)
 		steps = steps[np.argsort(probs)]
-		probs = np.sort(probs)
-		
+		probs = np.sort(probs)		
+		### only plot the top% steps, clip low prob steps.
+		topidx = probs > np.quantile(probs, showtop)
+
 		### get a square figure.
-		fig, ax = plt.subplots(nrows=ndim, ncols=ndim, figsize=(9,9))
+		fig, ax = plt.subplots(nrows=ndim, ncols=ndim, **figure_kws)
 		plt.subplots_adjust(bottom=0.09, top=0.91, left=0.09, right=0.91, wspace=0.05, hspace=0.05)
 
-		### only plot the top% steps, clip low prob steps.
-		idx = probs > np.percentile(probs, top)
-		
-		f = open(getOutPickleFilename(source, nComponent=nComponent, suffix=suffix)+'.out', 'w')
+		### decide where to put marker in hist
+		valuePos = hist_value_kws.pop('pos', 'bartop')
+		contourLevels = np.array(contour_kws.pop('levels', [0.2, 0.4, 0.6, 0.8]))
+
+		### output values and limits
+		f = open(output, 'w')
 		for i in range(ndim):
 			### hist at [i,i]
-			h,xe,_ = ax[i,i].hist(steps[:,i][idx], color='grey', bins=bins, density=True)
-			### get 16 84 percentile in full set.
-			lower = np.quantile(steps[:,i], 0.16)
-			upper = np.quantile(steps[:,i], 0.84)
-			### marker
-			peak = float(h[np.argwhere(point[i]>xe)[-1]])
-			ax[i,i].plot([point[i],], peak*1.1, 'v', color=pointColor)
-			ax[i,i].plot([lower]*2, [0, peak], '--', color='k', lw=1, alpha=0.5)
-			ax[i,i].plot([upper]*2, [0, peak], '--', color='k', lw=1, alpha=0.5)
-			### title
-			ax[i,i].text(0, 1.02, '%s=%s' % (labels[i], scientificNotationTitle(point[i], lower-point[i], upper-point[i])), \
-				ha='left', va='bottom', fontsize=10, transform=ax[i,i].transAxes)
+			h,xe,_ = ax[i,i].hist(steps[:,i][topidx], bins=bins, **hist_kws)
 
-			f.write('%s %f %f %f\n' % (labels[i], point[i], lower-point[i], upper-point[i]))
+			### values
+			if values is not None:
+				if valuePos == 'bartop': 
+					upperY = h[np.searchsorted(xe, values[i], side='right')-1] * 1.1
+				elif valuePos == 'top':
+					upperY = np.max(h)
+			ax[i,i].plot(values[i], upperY, **hist_value_kws)
+
+			### limits
+			lim = np.quantile(steps[:,i], limits)
+			for v in lim:
+				ax[i,i].axvline(v, **hist_limit_kws)
+
+			### labels
+			if labels is not None:
+				text = '%s=%s' % (labels[i], scientificNotationTitle(values[i], min(lim)-values[i], max(lim)-values[i]))
+				ax[i,i].text(0, 1.02, text, transform=ax[i,i].transAxes, ha='left', va='bottom', **hist_label_kws)
+
+			### output
+			f.write('%s %f %f %f\n' % (labels[i], values[i], min(lim)-values[i], max(lim)-values[i]))
 
 			### hide x ticklabels except the bottom row
 			if i<ndim-1: ax[i,i].xaxis.set_ticklabels([])
@@ -499,21 +544,31 @@ def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, 
 			ax[i,i].set_yticklabels([])
 
 			### ticks
+			ax[i,i].set_autoscale_on(False)
 			ax[i,i].minorticks_on()
 			ax[i,i].tick_params(top=True, left=False, direction='in', labelrotation=45, length=5)
 			ax[i,i].tick_params(which='minor', top=True, left=False, direction='in', length=2)
-			ax[i,i].set_xlim(lim(steps[:,i][idx]))
+			ax[i,i].set_xlim(autoLimit(steps[:,i][topidx]))
 
 			### plot hist2d
 			for j in range(i):
-				### hist/scatter/contour
-				h,xe,ye,_ = ax[i,j].hist2d(steps[:,j][idx], steps[:,i][idx], bins=bins, cmap='gray_r')
-				#ax[i,j].scatter(steps[:,j][idx], steps[:,i][idx], c=probs[idx], s=0.2, cmap='RdYlBu_r')
-				#x,y = (xe[1:]+xe[:-1])/2, (ye[1:]+ye[:-1])/2
-				#ax[i,j].contour(x, y, h.T, colors='gray',levels=[h.max()*0.5, h.max()*0.75])
+				h, xe, ye = np.histogram2d(steps[:,j][topidx], steps[:,i][topidx], bins=bins)
+				### hist2d
+				if hist2d:
+					ax[i,j].imshow(h.T, origin='lower', extent=[xe[0], xe[-1], ye[0], ye[-1]], aspect='auto', **hist2d_kws)
+				### scatter
+				if scatter:
+					ax[i,j].scatter(steps[:,j][topidx], steps[:,i][topidx], c=probs[topidx], **scatter_kws)
+				### contour
+				if contour:
+					if contour_smooth_sigma is not None:
+						h = gaussian_filter(h, sigma=contour_smooth_sigma)
+					xc = (xe[1:]+xe[:-1])/2
+					yc = (ye[1:]+ye[:-1])/2
+					ax[i,j].contour(xc, yc, h.T, levels=contourLevels*np.max(h), **contour_kws)
 
-				### marker
-				ax[i,j].plot(point[j], point[i], '+', color=pointColor, ms=8, mew=2)
+				### values
+				ax[i,j].plot(values[j], values[i], **hist2d_value_kws)
 				
 				### hide x ticklabels except the bottom row
 				if i<ndim-1: ax[i,j].xaxis.set_ticklabels([])
@@ -521,12 +576,13 @@ def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, 
 				if j>0: ax[i,j].yaxis.set_ticklabels([])
 
 				### ticks
+				ax[i,i].set_autoscale_on(False)
 				ax[i,j].minorticks_on()
 				ax[i,j].set_yticks(ax[i,i].get_xticks()) ### make sure ytick is the same as the [i,i] xtick
 				ax[i,j].tick_params(top=True, right=True, direction='in', labelrotation=45, length=5)
 				ax[i,j].tick_params(which='minor', top=True, right=True, direction='in', length=2)
-				ax[i,j].set_xlim(lim(steps[:,j][idx]))
-				ax[i,j].set_ylim(lim(steps[:,i][idx]))
+				ax[i,j].set_xlim(autoLimit(steps[:,j][topidx]))
+				ax[i,j].set_ylim(autoLimit(steps[:,i][topidx]))
 
 				### hide upper right
 				ax[j,i].axes.set_axis_off()
@@ -534,7 +590,7 @@ def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, 
 		return fig, ax
 
 
-	#corner.corner(steps, show_titles=True, plot_contours=False, plot_datapoints=True, quantiles=[0.16, 0.5, 0.84], range=None)#[(v-0.5,v+0.5) for v in best])
+	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux, limit), (steps, lnprobs) = loadPklFile(source, nComponent, suffix=suffix)
 	### get label
 	if params is None: 
 		copyMoleculeDat(lines)
@@ -556,27 +612,27 @@ def plotCorner(source, nComponent=2, bins=40, params=None, labels=None, top=50, 
 		labels = np.array(labels)[subset]
 
 	### filter
-	fig, ax = corners(steps, lnprobs, bins=bins, point=params, labels=labels, top=top)
+	fig, ax = corners(steps, lnprobs, bins=bins, values=params, labels=labels, showtop=showtop, \
+		output=getOutPickleFilename(source, nComponent=nComponent, suffix=suffix)+'.out')
 
 	fig.savefig(os.path.join(figPath, '%s_corner%s.png' % (source, suffix)), format='png', bbox_inches='tight', dpi=400)
 	return fig, ax
 
 
+def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)], 'ci':[(j,j-1) for j in range(1,3)]}, 
+	suffix='', params=None, speciesSep = 1.5, obsColor='k', modelColor = '#DD8822', componentColors = ['#6699EE', '#EE8888'], 
+	bestN=10, bestNColor='#FFAA44', otherModel={}, otherColor=['green'], separateComponents=True, **kws):
 
-def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)], 'ci':[(j,j-1) for j in range(1,3)]}, params=None, suffix='', speciesSep = 1.5, color = ['#DD8822', '#FFAA44'], colors = ['#6699EE', '#EE8888'], bestN=10, **kws):
 	### plot SLED of several species
-	global z, dV, paramsConfig, lastCO
+	global z, dV, paramsConfig
 
 	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux, limit), (steps, lnprobs) = loadPklFile(source, nComponent, suffix=suffix)
 	#with open(getOutPickleFilename(source, nComponent, suffix=suffix), 'rb') as pklFile:
 	#	source, z, bounds, T_d, dV, nComponent, paramsConfig, (lines, flux, eflux), (steps, lnprobs) = pickle.load(pklFile)
-	lastCO = lines['co'][-1][0]
-
 
 	### copy mol dat to RAM
 	copyMoleculeDat(lines)
-
-	### modify the form of lines
+	### modify the form of lines, fill flux/eflux/limit to the dict
 	def fillFluxToLines(lines, *args):
 		### modify lines to [Jup, flux, eflux, ...]
 		i = 0
@@ -587,14 +643,43 @@ def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)
 				filledLines[species].append(a[...,i:i+len(J)])
 			i += len(J)
 		return filledLines
+	### smooth sled to curve
+	def interp(x, y):
+		if len(x)>2:
+			f = interp1d(x, y, kind='cubic')
+			xa = np.linspace(x[0], x[-1], int((x[-1]-x[0])*50))
+			return xa, f(xa)
+		else: return x, y
+
 	# fill obs
 	obsLines = fillFluxToLines(lines, flux, eflux, limit)
+
 	# fill model
 	if params is None: params = betterStep(steps, lnprobs, nComponent=nComponent)
-
 	modelFlux, modelTau = modelMM(fp2p(params, nComponent), plotLines, nComponent = nComponent)
 	modelLines = fillFluxToLines(plotLines, modelFlux)
 
+	def readModelOut(file):
+		try:
+			filledLines = {}
+			f = open(file, 'r')
+			for l in f:
+				linename, *flux, sumflux = [s for s in l.split(' ') if len(s)>0]
+				species, Jup, Jlo = decodeMolecule(linename)
+				flux = [float(v) for v in flux]
+				sumflux = float(sumflux)
+				if species in filledLines:
+					filledLines[species][0].append((Jup, Jlo))
+					filledLines[species][1].append(flux)
+				else: filledLines[species] = [[(Jup, Jlo),],[flux,]]
+			f.close()
+			for s in filledLines:
+				filledLines[s][1] = np.array(filledLines[s][1]).T
+			return filledLines
+		except:
+			return None
+	### another sled
+	otherModelLines = {label:readModelOut(file) for label, file in otherModel.items()}
 
 	if bestN>0:
 		### plot the best n results
@@ -616,13 +701,7 @@ def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)
 	xShift = 0
 	xticks = []
 	xticklabels = []
-	### smooth sled
-	def interp(x, y):
-		if len(x)>2:
-			f = interp1d(x, y, kind='cubic')
-			xa = np.linspace(x[0], x[-1], int((x[-1]-x[0])*50))
-			return xa, f(xa)
-		else: return x, y
+	modelOut = []
 	for i, (species, J) in enumerate(plotLines.items()):
 		xPos = np.array(J)[:,0] + xShift - 1
 
@@ -632,36 +711,48 @@ def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)
 			_x, _y, _e, _l = obsLines[species]
 			_x = np.array(_x)[:,0] + xShift - 1 #Jup
 
-			#_l = np.repeat('l', _e.size)
-
 			mask = _l == 'd'
 			if mask.any():
-				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='o', label='$\mathrm{data}$', color='#000000', capsize=0)
+				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='o', color=obsColor, capsize=0, label='$\mathrm{data}$' if i==0 else None)
 			mask = (_l == 'u') & np.isfinite(_e)
 			if mask.any():
-				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='_', uplims=True, color='#000000', capsize=0)
+				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='_', uplims=True, color=obsColor, capsize=0)
 			mask = (_l == 'l') & np.isfinite(_e)
 			if mask.any():
-				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='_', lolims=True, color='#000000', capsize=0)
+				ax.errorbar(_x[mask], _y[mask].value, _e[mask].value, fmt='_', lolims=True, color=obsColor, capsize=0)
 
 			### model
 			_x, _y = modelLines[species]
 			_x = np.array(_x)[:,0] + xShift - 1
 
+			modelOut.append(_y.copy())
+			print('       '+' '.join(['  %5i  ' % v for v in _x]))
+
 			### each component
-			for i in range(nComponent):
-				#ax.plot(_x, _y[i], 's', color=colors[i])
-				ax.plot(*interp(_x, _y[i]), color=colors[i], lw=2)
+			if (nComponent>1) and separateComponents:
+				for c in range(nComponent):
+					if c ==0: label = 'low-excitation comp.'
+					else: labels='high-excitation comp.'
+					ax.plot(*interp(_x, _y[c]), color=componentColors[c], lw=2, label=label if i==0 else None)
+					print('Comp %1s:' % (c+1) + ' '.join(['%9.2e' % v for v in _y[c]]),)
 			### sum all
-			_y = np.sum(_y, axis=0)
-			#ax.plot(_x, _y, 's', color=color)
-			ax.plot(*interp(_x, _y), color=color[0], lw=2)
+			_ys = np.sum(_y, axis=0)
+			label = '%1i-component model' % nComponent
+			ax.plot(*interp(_x, _ys), color=modelColor, lw=2, label=label if i==0 else None)
+			print('All   :' + ' '.join(['%9.2e' % v for v in _ys]))
 
 			if bestN>0:
 				for b in bestLines[species][1:]:
-					#ax.plot(*interp(_x, b[0]), alpha=0.1, lw=1, color=colors[0])
-					#ax.plot(*interp(_x, b[1]), alpha=0.1, lw=1, color=colors[1])
-					ax.plot(*interp(_x, np.sum(b, axis=0)), alpha=0.15, lw=2, color=color[1], zorder=0)
+					#ax.plot(*interp(_x, b[0]), alpha=0.1, lw=1, color=componentColors[0])
+					#ax.plot(*interp(_x, b[1]), alpha=0.1, lw=1, color=componentColors[1])
+					ax.plot(*interp(_x, np.sum(b, axis=0)), alpha=0.15, lw=2, color=bestNColor, zorder=0)
+
+			for o, (label, anotherModelLines) in enumerate(otherModelLines.items()):
+				_x, _y = anotherModelLines[species]
+				_x = np.array(_x)[:,0] + xShift - 1
+				### sum all
+				_ys = np.sum(_y, axis=0)
+				ax.plot(*interp(_x, _ys), color=otherColor[o], lw=2, label=label if i==0 else None)
 
 		### gather ticks and labels
 		xticks += list(xPos)
@@ -670,12 +761,22 @@ def plotSLED(source, nComponent=2, plotLines={'co':[(j,j-1) for j in range(1,11)
 		### move to the next species
 		xShift = xPos[-1] + speciesSep
 
+	ax.legend(loc='upper right', fontsize=10)
+
+	# set tick
 	ax.set_xticks(xticks)
 	ax.set_xticklabels(xticklabels, rotation=45, fontsize=12, fontweight='bold')
 	ax.set_yticklabels(ax.get_yticklabels(), fontsize=12, fontweight='bold')
 	ax.set_ylabel('$\mathbf{S_J}$ (Jy km s$\mathbf{^{-1}}$)', fontsize=15, fontweight='bold')
 
 	fig.savefig(os.path.join(figPath, '%s_SLED%s.png' % (source, suffix)), format='png', bbox_inches='tight', dpi=400)
+
+	### output model flux to dat
+	outfile = open(os.path.join(outPath, '%s_%1icomp_model_flux.dat' % (source, nComponent)), 'w')
+	modelOut = np.hstack(modelOut)
+	for i in range(len(xticklabels)):
+		outfile.write('%-12s' % xticklabels[i] + ' '.join(['%10.3e' % v for v in modelOut[:,i]]) + '%10.3e' % (modelOut[:,i].sum()) + '\n')
+	outfile.close()
 	return fig, ax
 
 
@@ -705,7 +806,6 @@ def	initConfig(nComponent, phySize=6, muLensing=1.0):
 		paramsConfig['Omega'][0] = [logOmega-c*2 for c in range(nComponent)]
 
 
-
 def initBounds(nComponent):
 	### bounds of free params draw from ([log Density, log Tkin, log X(species1), log X(species2), ... logSize] * n component)
 	global paramsConfig
@@ -718,7 +818,6 @@ def initBounds(nComponent):
 				if c==0: bounds.append(v[2])
 
 	return np.array(bounds)
-
 
 
 def initParams(nComponent, bounds, nwalkers, flux, eflux, limit):
@@ -758,7 +857,6 @@ def initParams(nComponent, bounds, nwalkers, flux, eflux, limit):
 	return p0
 
 
-
 def runMCMC(catname, source,
 	nComponent = 2,
 	nwalkers = 32,
@@ -767,14 +865,11 @@ def runMCMC(catname, source,
 	suffix = '',
 	phySize = 7):
 	### run mcmcm
-	global z, lines, D_A, T_d, nfp, dV, paramsConfig, lastCO
+	global z, lines, D_A, T_d, nfp, dV, paramsConfig
 
 	cat = loadCatalog(catname)
 	z, T_d, line_width, lines, flux, eflux, limit = getSource(cat, source)
 	D_A = cosmo.angular_diameter_distance(z).to(u.kpc).value
-
-	### get the transition of last CO
-	lastCO = lines['co'][-1][0]
 
 	dV = line_width	# do not care actually, fully degenerate with the column density
 
@@ -898,7 +993,6 @@ if __name__ == '__main__':
 		if its 'err' is NaN: value is not obseved, but model should above it (more like a physical limit), and will not show in SLED plot.
 		if not: value is obseved but above a threshold, and will be plotted as small bar.
 
-
 	### Parameter Configure
 	The keys of paramsConfig should be in the order:
 		'nH2', 'Tkin', 'Xmol1', 'Xmol2', ..., 'Omega', 
@@ -914,9 +1008,7 @@ if __name__ == '__main__':
 		bounds: only valid if it is a free/share parameter
 			actual bounds of Omega is its initial + bounds
 		label: title of corners
-	'''
 
-	'''
 	### Usage
 	# calculate one source like this:
 		catname = '../data/flux_for2p.dat'
@@ -937,13 +1029,37 @@ if __name__ == '__main__':
 
 	### cf. flux_for2p.dat for table format
 	'''
+
+	# name of catalog
 	catname = './flux_for2p.dat'
-	source = '2299'
+	# source name in catalog
+	source = '7395'
+	# number of components
+	nComponent = 2 # cold and warm
+	# suffix of output files to distinguish each session
+	#suffix = '_5fp_Tdust_zcorr_limit'
+	suffix = '_6fp_fixCI_Tdust_zcorr_limit'
+
+	# default bounds of molecular abundance
+	XB = {'co': [8e-5, 2e-4], 'hcn': [1e-9, 5e-7], 'cs': [1e-9, 5e-7], 'hcop': [1e-9, 5e-7], 'ci': [1e-5, 2e-3]}
+	# parameter config
+	paramsConfig = dict(
+		nH2  = [[4.781, 3.337],	'free',	(1.5, 6.0),	r'$lg n_{H_2}$'],	#density, MUST be 'free'
+		Tkin = [[0.879, 2.222],	'free',	(lg(Tbg), 2.8),	r'$lg T_{Kin}$'],	#Tkin, MUST be 'free'
+		Xco  = [-4.10,	'fix',	lg(XB['co']),	r'$lg X_{CO}$'],		#abundance
+		Xci  = [-4.52,	'share',lg(XB['ci']),	r'$lg X_{CI}$'],		#abundance
+		Omega= [None,	'free',	(-5, 5), 			r'$lg \Omega$']		#solid angle, if share, shrink by two magnitude for each component
+	)
+
+
 	runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=50, niter=100, phySize=3)
-	#plotProb(source, nComponent = nComponent, suffix=suffix)
-	#plotCorner(source, nComponent = nComponent, suffix=suffix, top=40, subset=[0,1,3,4])
-	#plotSLED(source, nComponent = nComponent, suffix=suffix)
-	#plt.show()
+	plotProb(source, nComponent = nComponent, suffix=suffix)
+	plotCorner(source, nComponent = nComponent, suffix=suffix, showtop=0.5)
+	# draw sled of a model
+	plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=10)
+	# draw several model together
+	plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=0, separateComponents=True, otherModel={'1-component model':'out/%s_1comp_model_flux.dat' % source})
+	plt.show()
 
 
 # See :
