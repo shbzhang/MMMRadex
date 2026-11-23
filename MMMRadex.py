@@ -27,7 +27,7 @@ from scipy.ndimage import gaussian_filter
 # to match the cosmo in the CO paper
 from astropy.cosmology import Planck18 as cosmo
 #from astropy.cosmology import FlatLambdaCDM
-#cosmo = FlatLambdaCDM(H0=67.8 * u.km / u.s / u.Mpc, Om0=0.308)
+#cosmo = FlatLambdaCDM(H0=70 * u.km / u.s / u.Mpc, Om0=0.308)
 
 import matplotlib.pyplot as plt
 
@@ -871,7 +871,7 @@ def runMCMC(catname, source,
 	z, T_d, line_width, lines, flux, eflux, limit = getSource(cat, source)
 	D_A = cosmo.angular_diameter_distance(z).to(u.kpc).value
 
-	dV = line_width	# do not care actually, fully degenerate with the column density
+	dV = line_width/2.355	# do not care actually, fully degenerate with the column density
 
 	# Line : Jy km/s
 	# 1 Jansky=1 Jy = 10e-26 W m-2 Hz-1 = 1e-23 erg s-1 cm-2 Hz-1
@@ -1033,7 +1033,7 @@ if __name__ == '__main__':
 	# name of catalog
 	catname = './example.dat'
 	# source name in catalog
-	source = '7395'
+	source = '2299'
 	# number of components
 	nComponent = 2 # cold and warm
 	# suffix of output files to distinguish each session
