@@ -1011,7 +1011,7 @@ if __name__ == '__main__':
 
 	### Usage
 	# calculate one source like this:
-		catname = '../data/flux_for2p.dat'
+		catname = '../data/example.dat'
 		source = '2299'
 		runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=200, niter=800, phySize=3)
 		plotProb(source, nComponent = nComponent, suffix=suffix)
@@ -1019,7 +1019,7 @@ if __name__ == '__main__':
 		plotSLED(source, nComponent = nComponent, suffix=suffix)
 
 	# or iterate the whole table like this:
-		catname = '../data/flux_for2p.dat'
+		catname = '../data/example.dat'
 		cat = loadCatalog(catname)
 		for source,_ in cat.iterrows():
 			runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=200, niter=800, phySize=3)
@@ -1027,11 +1027,11 @@ if __name__ == '__main__':
 			plotCorner(source, nComponent = nComponent, suffix=suffix)
 			plotSLED(source, nComponent = nComponent, suffix=suffix)
 
-	### cf. flux_for2p.dat for table format
+	### cf. example.dat for table format
 	'''
 
 	# name of catalog
-	catname = './flux_for2p.dat'
+	catname = './example.dat'
 	# source name in catalog
 	source = '7395'
 	# number of components
@@ -1041,7 +1041,7 @@ if __name__ == '__main__':
 	suffix = '_6fp_fixCI_Tdust_zcorr_limit'
 
 	# default bounds of molecular abundance
-	XB = {'co': [8e-5, 2e-4], 'hcn': [1e-9, 5e-7], 'cs': [1e-9, 5e-7], 'hcop': [1e-9, 5e-7], 'ci': [1e-5, 2e-3]}
+	XB = {'co': [1e-5, 1e-3], 'hcn': [1e-9, 5e-7], 'cs': [1e-9, 5e-7], 'hcop': [1e-9, 5e-7], 'ci': [1e-5, 1e-3]}
 	# parameter config
 	paramsConfig = dict(
 		nH2  = [[4.781, 3.337],	'free',	(1.5, 6.0),	r'$lg n_{H_2}$'],	#density, MUST be 'free'
