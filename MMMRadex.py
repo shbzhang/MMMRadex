@@ -12,7 +12,6 @@
 
 import os, sys, re, shutil, tempfile, logging
 import multiprocessing, subprocess, emcee
-# For runing the code on the clusters
 import _pickle as pickle
 import warnings
 import numpy as np
@@ -24,10 +23,8 @@ from scipy.interpolate import interp1d
 from scipy.stats import norm
 from scipy.ndimage import gaussian_filter
 
-# to match the cosmo in the CO paper
 from astropy.cosmology import Planck18 as cosmo
 #from astropy.cosmology import FlatLambdaCDM
-#cosmo = FlatLambdaCDM(H0=70 * u.km / u.s / u.Mpc, Om0=0.308)
 
 import matplotlib.pyplot as plt
 
@@ -295,23 +292,6 @@ def lnPrior(fp, bounds, nComponent=2):
 
 	Tcold = 10**p[0, 1]
 	return -0.5 * ((Tcold-T_d)/(1.0*T_d))**2
-	# 9 < log10(N_CO/dv) - log10(n_H2) < 18
-	#if np.any(parr[:,2:-1] - parr[:,0] >= 18) or np.any(parr[:,2:-1]- parr[:,0] <= 9):
-	#	return -np.inf
-	#if (np.any((p[2] - p[0]) >= 18.0) or np.any((p[2] - p[0]) <= 9.0) or
-	#	np.any((p[6] - p[4]) >= 18.0) or np.any((p[6] - p[4]) <= 9.0)) :
-	#	return -np.inf
-
-	# Add bounds for tau, should be < 100
-	# try:
-	#     tau_max = model_lvg_tau(p, R)
-	# except ValueError:
-	#     return -np.inf
-	# 
-	# if (tau_max > 100):
-	#     return -np.inf
-
-	#return 0.
 
 
 def lnProb(fp, flux, eflux, limit, nComponent=2, bounds=None, **kws):
@@ -326,7 +306,7 @@ def loadCatalog(filename):
 	df = pd.read_csv(
 		filename,
 		comment='#',       # Ignore lines starting with #
-		skiprows=0,        # Skip the first two rows (so the third row is used as header)
+		skiprows=0,        # Skip rows
 		delim_whitespace=True,  # Assume the columns are separated by any whitespace
 		na_values='NaN'    # Interpret 'NaN' strings as actual NaN values
 	)
@@ -1061,9 +1041,3 @@ if __name__ == '__main__':
 	#plotSLED(source, nComponent = nComponent, suffix=suffix, bestN=0, separateComponents=True, otherModel={'1-component model':'out/%s_1comp_model_flux.dat' % source})
 	plt.show()
 
-
-# See :
-# - https://arxiv.org/pdf/1602.01095.pdf
-# - https://arxiv.org/pdf/1401.2998.pdf
-# - https://arxiv.org/pdf/1212.5955.pdf
-# - https://arxiv.org/abs/0809.2337
