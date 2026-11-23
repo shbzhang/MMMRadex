@@ -49,9 +49,9 @@ figPath = './fig'
 ### Catalog
 flux of sources are stored in a catalog, each flux is followed by an error column:
 ```
-SOURCE   z       D_L     T_dust  FWHM   CO(1-0)  err      CO(2-1)  err     CO(3-2)  err    CO(4-3)  err     CO(5-4)  err     CO(6-5)  err     CO(7-6)  err     CO(8-7)  err     CI(1-0)  err     CI(2-1)  err
-1338     1.234   8801    30      89.8   NaN      NaN      0.278    0.024   NaN      NaN    0.521    0.038   0.537    0.081   NaN      NaN     0.352    0.067   NaN      NaN     0.267    0.038   0.328    0.067
-2299     1.395   10238   30      143.4  0.165    0.029    0.636    0.039   NaN      NaN    2.710    0.028   2.783    0.085   NaN      NaN     1.860    0.034   1.2u     0.1     1.186    0.031   2.006    0.042
+SOURCE/LINES(Jy_km/s)     z       D_L     T_dust  FWHM   CO(1-0)  err      CO(2-1)  err     CO(3-2)  err    CO(4-3)  err     CO(5-4)  err     CO(6-5)  err     CO(7-6)  err     CO(8-7)  err     CI(1-0)  err     CI(2-1)  err
+2299                      1.395   9973    30      151  0.467    0.130    1.101    0.064   NaN      NaN    2.718    0.030   2.786    0.094   NaN      NaN     1.932    0.041   NaN      NaN     1.228    0.035   1.837    0.041
+42925                     1.603   11839   30      501  0.237u   0.079    0.659    0.109   NaN      NaN    1.229    0.045   1.254   0.148    NaN      NaN     1.467    0.072   NaN      NaN     0.576    0.055   1.036    0.071
 ......
 ```
 
@@ -106,7 +106,7 @@ paramsConfig = dict(
 calculate one source like this:
 ```
 # specify a catalog
-catname = '../data/flux_for2p.dat'
+catname = 'example.dat'
 # specify a source
 source = '2299'
 # run
@@ -116,7 +116,7 @@ runMCMC(catname, source, nComponent=nComponent, suffix=suffix, nburn=200, niter=
 or iterate the whole table like this:
 ```
 # specify a catalog
-catname = '../data/flux_for2p.dat'
+catname = 'example.dat'
 # load catalog and run
 cat = loadCatalog(catname)
 for source,_ in cat.iterrows():
